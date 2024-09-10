@@ -8,17 +8,21 @@ from webdriver_manager.chrome import ChromeDriverManager
 import csv
 import time
 import os
+from selenium.webdriver.chrome.options import Options
 
-# Configure Selenium to run headless Chrome
 def configure_driver():
-    chrome_options = webdriver.ChromeOptions()
+    chrome_options = Options()
     chrome_options.add_argument("--headless")  # Ensure headless mode
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     
-    # Set up ChromeDriver
-    driver = webdriver.Chrome(service=Service("/usr/bin/chromedriver"), options=chrome_options)
+    # Specify the Chrome browser binary location (Streamlit Cloud's Chrome binary)
+    chrome_options.binary_location = "/usr/bin/google-chrome"
+
+    # Use WebDriver Manager to handle ChromeDriver installation and setup
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
     return driver
+
 
 # Define a function to scrape the website
 def scrape_website(url):
