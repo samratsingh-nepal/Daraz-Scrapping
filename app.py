@@ -9,17 +9,17 @@ from selenium.webdriver.support import expected_conditions as EC
 import csv
 import pandas as pd
 import os
+from selenium.webdriver import Remote
 
-# Configure Chrome WebDriver for headless mode
 def configure_driver():
     chrome_options = Options()
-    chrome_options.add_argument("--headless")  
+    chrome_options.add_argument("--headless")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--window-size=1920,1080")
     
-    # Install ChromeDriver dynamically and set it up with Selenium
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+    driver = Remote(command_executor='http://your-selenium-grid-url/wd/hub',
+                    options=chrome_options)
     return driver
 
 # Web scraping function
