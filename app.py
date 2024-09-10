@@ -1,39 +1,43 @@
-import selenium
+import streamlit as st
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import csv
 import time
-import streamlit as st
-from io import StringIO
+import os
 
-# Define a function to perform web scraping
-def scrape_daraz_data(url):
-    # Setup Selenium driver (you will need to set your chromedriver path)
-    service = Service(executable_path='path_to_chromedriver')
-    driver2 = webdriver.Chrome(service=service)
+# Configure Selenium to run headless Chrome
+def configure_driver():
+    chrome_options = webdriver.ChromeOptions()
+    chrome_options.add_argument("--headless")  # Ensure headless mode
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    
+    # Set up ChromeDriver
+    driver = webdriver.Chrome(service=Service("/usr/bin/chromedriver"), options=chrome_options)
+    return driver
 
-    # Open the URL provided by the user
-    driver2.get(url)
+# Define a function to scrape the website
+def scrape_website(url):
+    driver = configure_driver()  # Use the headless driver
+    driver.get(url)
 
-    # Wait for the product elements to load
-    WebDriverWait(driver2, 20).until(EC.presence_of_all_elements_located((By.CLASS_NAME, 'RfADt')))
+    # Wait for products to load
+    WebDriverWait(driver, 20).until(EC.presence_of_all_elements_located((By.CLASS_NAME, 'RfADt')))
 
     # Find product elements
-    products = driver2.find_elements(By.CLASS_NAME, 'RfADt')
-    prices = driver2.find_elements(By.CLASS_NAME, 'ooOxS')
-    sold = driver2.find_elements(By.CLASS_NAME, '_1cEkb')
-    reviews = driver2.find_elements(By.CLASS_NAME, 'qzqFw')
+    products = driver.find_elements(By.CLASS_NAME, 'RfADt')
+    prices = driver.find_elements(By.CLASS_NAME, 'ooOxS')
+    sold = driver.find_elements(By.CLASS_NAME, '_1cEkb')
+    reviews = driver.find_elements(By.CLASS_NAME, 'qzqFw')
 
-    WebDriverWait(driver2, 20).until(
+    WebDriverWait(driver, 20).until(
         EC.presence_of_all_elements_located((By.CSS_SELECTOR, '.mdmmT._32vUv'))
     )
-    stars = driver2.find_elements(By.CSS_SELECTOR, '.mdmmT._32vUv')
+    stars = driver.find_elements(By.CSS_SELECTOR, '.mdmmT._32vUv')
 
-    # Store product data
     product_data = []
 
     # Loop through each product and gather details
@@ -50,43 +54,30 @@ def scrape_daraz_data(url):
             # Append the product details to the list
             product_data.append((product_name, product_price, product_sold, product_review, full_star_count))
         except Exception as e:
-            st.write(f"Error processing product: {e}")
+            print(f"Error processing product: {e}")
+    
+    driver.quit()
 
-    # Close the browser
-    driver2.quit()
+    # Write the data to a CSV file
+    file_path = 'daraz_airpod.csv'
+    with open(file_path, 'w', newline='', encoding='utf-8') as file:
+        writer = csv.writer(file)
+        # Write the header
+        writer.writerow(['Product Name', 'Price', "Sold", "Reviews", "Stars"])
+        # Write the product data
+        writer.writerows(product_data)
 
-    return product_data
+    return file_path
 
-# Streamlit app
-def main():
-    st.title('Daraz Web Scraper')
+# Streamlit UI
+st.title("Product Scraper App")
+url_input = st.text_input("Enter the product URL:")
 
-    # Input field for URL
-    url = st.text_input('Enter the Daraz URL:', '')
-
-    # Button to trigger scraping
-    if st.button('Scrape Data'):
-        if url:
-            # Scrape the data
-            product_data = scrape_daraz_data(url)
-
-            if product_data:
-                # Display data in Streamlit
-                st.write('Scraped Data:')
-                st.table(product_data)
-
-                # Create CSV
-                csv_data = StringIO()
-                writer = csv.writer(csv_data)
-                writer.writerow(['Product Name', 'Price', "Sold", "Reviews", "Stars"])
-                writer.writerows(product_data)
-
-                # Download link
-                st.download_button(label="Download CSV", data=csv_data.getvalue(), file_name="daraz_airpod.csv", mime="text/csv")
-            else:
-                st.write("No data found or failed to scrape.")
-        else:
-            st.write("Please enter a valid URL.")
-
-if __name__ == '__main__':
-    main()
+if st.button('Scrape'):
+    if url_input:
+        result = scrape_website(url_input)
+        st.write(f"Data successfully written to {result}")
+        with open(result, "rb") as file:
+            st.download_button(label="Download CSV", data=file, file_name='daraz_airpod.csv')
+    else:
+        st.write("Please enter a valid URL.")
