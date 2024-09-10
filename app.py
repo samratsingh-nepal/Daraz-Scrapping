@@ -9,8 +9,6 @@ import csv
 import time
 import os
 from selenium.webdriver.chrome.options import Options
-
-Copy code
 import logging
 
 logging.basicConfig(level=logging.INFO)
