@@ -70,4 +70,19 @@ if url_input and st.button("Start Scraping"):
     with st.spinner('Scraping the website...'):
         csv_file = scrape_website(url_input)  # Pass the user input URL to scrape
 
-    # Display su
+# Display success message and download button if scraping was successful
+    if csv_file:
+        st.success("Scraping completed!")
+
+        # Provide download button for the CSV file
+        with open(csv_file, "rb") as file:
+            st.download_button(
+                label="Download CSV",
+                data=file,
+                file_name=csv_file,
+                mime="text/csv"
+            )
+
+        # Clean up the generated CSV file after download option is provided
+        if os.path.exists(csv_file):
+            os.remove(csv_file)
