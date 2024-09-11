@@ -18,8 +18,7 @@ def configure_driver():
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--window-size=1920,1080")
     
-    driver = Remote(command_executor='http://your-selenium-grid-url/wd/hub',
-                    options=chrome_options)
+    driver= webdriver.Chrome(service=Service(ChromeDriverManager().install()))
     return driver
 
 # Web scraping function
