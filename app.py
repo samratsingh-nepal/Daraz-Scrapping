@@ -1,69 +1,36 @@
 import streamlit as st
-from selenium import webdriver
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+import requests
+from bs4 import BeautifulSoup
 import pandas as pd
 import os
 
-# Function to configure the Selenium WebDriver
-def configure_driver():
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")  # Run in headless mode (no browser UI)
-    chrome_options.add_argument("--no-sandbox")  # Required for cloud environments
-    chrome_options.add_argument("--disable-dev-shm-usage")  # Fix issues with resource limitations
-    chrome_options.add_argument("--disable-gpu")  # Disable GPU usage if not needed
-    
-    # Install ChromeDriver and configure it
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-    return driver
-
-# Function to scrape the website and return the CSV filename
 def scrape_website(url):
     try:
-        # Start the Selenium driver
-        driver = configure_driver()
-        driver.get(url)
+        # Send an HTTP request to the provided URL
+        response = requests.get(url)
+        response.raise_for_status()  # Check for HTTP errors
 
-        # Wait for the necessary elements to load
-        WebDriverWait(driver, 20).until(EC.presence_of_all_elements_located((By.CLASS_NAME, 'RfADt')))
+        # Parse the content using BeautifulSoup
+        soup = BeautifulSoup(response.text, 'html.parser')
 
-        # Scrape product elements
-        products = driver.find_elements(By.CLASS_NAME, 'RfADt')
-        prices = driver.find_elements(By.CLASS_NAME, 'ooOxS')
-        sold = driver.find_elements(By.CLASS_NAME, '_1cEkb')
-        reviews = driver.find_elements(By.CLASS_NAME, 'qzqFw')
-
-        # Wait for star ratings to load
-        WebDriverWait(driver, 20).until(
-            EC.presence_of_all_elements_located((By.CSS_SELECTOR, '.mdmmT._32vUv'))
-        )
-        stars = driver.find_elements(By.CSS_SELECTOR, '.mdmmT._32vUv')
+        # Extract product information (You will need to modify these selectors based on the website's HTML structure)
+        products = soup.find_all(class_='RfADt')
+        prices = soup.find_all(class_='ooOxS')
+        sold_items = soup.find_all(class_='_1cEkb')
+        reviews = soup.find_all(class_='qzqFw')
+        stars = soup.find_all(class_='mdmmT _32vUv')
 
         product_data = []
 
         # Loop through each product and gather details
-        for product, price, sold_item, review, star_element in zip(products, prices, sold, reviews, stars):
-            try:
-                # Extract product details
-                product_name = product.text if product else "N/A"
-                product_price = price.text if price else "N/A"
-                product_sold = sold_item.text if sold_item else "N/A"
-                product_review = review.text if review else "N/A"
-                
-                # Find full star elements inside star container
-                full_star_elements = star_element.find_elements(By.CSS_SELECTOR, '._9-ogB.Dy1nx')
-                full_star_count = len(full_star_elements)
+        for product, price, sold_item, review, star in zip(products, prices, sold_items, reviews, stars):
+            product_name = product.get_text() if product else "N/A"
+            product_price = price.get_text() if price else "N/A"
+            product_sold = sold_item.get_text() if sold_item else "N/A"
+            product_review = review.get_text() if review else "N/A"
+            star_count = len(star.find_all(class_='_9-ogB Dy1nx')) if star else 0  # Count stars
 
-                # Append the product details to the list
-                product_data.append((product_name, product_price, product_sold, product_review, full_star_count))
-            except Exception as e:
-                st.write(f"Error processing product: {e}")
-
-        driver.quit()
+            product_data.append((product_name, product_price, product_sold, product_review, star_count))
 
         # Save scraped data to a CSV file
         df = pd.DataFrame(product_data, columns=['Product Name', 'Price', 'Sold', 'Reviews', 'Stars'])
@@ -73,10 +40,9 @@ def scrape_website(url):
         return csv_file
     except Exception as e:
         st.error(f"An error occurred while scraping: {e}")
-        driver.quit()
 
 # Streamlit app
-st.title("Web Scraping with Selenium in Streamlit")
+st.title("Web Scraping with BeautifulSoup in Streamlit")
 
 # Input URL from user
 url_input = st.text_input("Enter the URL to scrape:")
