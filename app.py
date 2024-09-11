@@ -24,16 +24,16 @@ def scrape_website(url):
 
         # Loop through each product and gather details
         for product, price, sold_item, review, star in zip(products, prices, sold_items, reviews, stars):
-            product_name = product.get_text() 
-            product_price = price.get_text() 
-            product_sold = sold_item.get_text() 
-            product_review = review.get_text() 
-            star_count = len(star.find_all(class_='_9-ogB Dy1nx'))   # Count stars
+            product_name = product.get_text() if product else "N/A"
+            product_price = price.get_text() if price else "N/A" 
+            product_sold = sold_item.get_text() if sold_item else "N/A"
+            product_review = review.get_text() if review else "N/A"
+            star_count = len(star.find_all(class_='_9-ogB Dy1nx')) if star else "N/A"  # Count stars
 
             product_data.append((product_name, product_price, product_sold, product_review, star_count))
 
         # Save scraped data to a CSV file
-        df = pd.DataFrame(product_data, columns=['Product Name', 'Price', 'Sold', 'Reviews', 'Stars'])
+        df = pd.DataFrame(product_data, columns=['product_name', 'product_price', 'product_sold', 'product_review', 'star_count'])
         csv_file = 'daraz_airpod.csv'
         df.to_csv(csv_file, index=False, encoding='utf-8')
 
