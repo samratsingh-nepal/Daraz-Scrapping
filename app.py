@@ -18,7 +18,6 @@ def scrape_website(url):
         prices = soup.find_all(class_='ooOxS')
         sold_items = soup.find_all(class_='_1cEkb')
         reviews = soup.find_all(class_='qzqFw')
-        stars = soup.find_all(class_='_9-ogB Dy1nx')
 
         product_data = []
 
