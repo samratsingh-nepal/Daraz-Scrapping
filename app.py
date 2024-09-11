@@ -18,6 +18,7 @@ def scrape_website(url):
         prices = soup.find_all(class_='ooOxS')
         sold_items = soup.find_all(class_='_1cEkb')
         reviews = soup.find_all(class_='qzqFw')
+        stars=soup.find_all(class_='mdmmT _32vUv')
 
         product_data = []
 
@@ -27,6 +28,7 @@ def scrape_website(url):
             product_price = price.get_text() if price else "N/A" 
             product_sold = sold_item.get_text() if sold_item else "N/A"
             product_review = review.get_text() if review else "N/A"
+            star= 
             star_count = len(star.find_all(class_='_9-ogB Dy1nx')) if star else "N/A"  # Count stars
 
             product_data.append((product_name, product_price, product_sold, product_review, star_count))
