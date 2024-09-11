@@ -18,12 +18,12 @@ def scrape_website(url):
         prices = soup.find_all(class_='ooOxS')
         sold_items = soup.find_all(class_='_1cEkb')
         reviews = soup.find_all(class_='qzqFw')
-        stars = soup.find_all(class_='mdmmT _32vUv')
+        
 
         product_data = []
 
         # Loop through each product and gather details
-        for product, price, sold_item, review, star in zip(products, prices, sold_items, reviews, stars):
+        for product, price, sold_item, review in zip(products, prices, sold_items, reviews):
             product_name = product.get_text().strip() if product else "N/A"
 
             # Convert price to integer (removing any non-numeric characters like commas or currency symbols)
@@ -44,14 +44,11 @@ def scrape_website(url):
             except ValueError:
                 product_review_count = 0
 
-            # Count the number of full stars
-            star_count = len(star.find_all(class_='_9-ogB Dy1nx')) if star else 0
-
             # Append the product details
-            product_data.append((product_name, product_price, product_sold, product_review_count, star_count))
+            product_data.append((product_name, product_price, product_sold, product_review_count))
 
         # Save scraped data to a CSV file
-        df = pd.DataFrame(product_data, columns=['product_name', 'product_price', 'product_sold', 'product_review_count', 'star_count'])
+        df = pd.DataFrame(product_data, columns=['product_name', 'product_price', 'product_sold', 'product_review_count'])
         csv_file = 'daraz_airpod.csv'
         df.to_csv(csv_file, index=False, encoding='utf-8')
 
