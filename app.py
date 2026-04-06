@@ -9,21 +9,22 @@ from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 
 def scrape_website(url):
-    # 1. Setup Selenium Chrome Options
     chrome_options = Options()
-    chrome_options.add_argument("--headless")  # Run without opening a window
+    chrome_options.add_argument("--headless")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
-    # Mimic a real browser to avoid blocks
-    chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    chrome_options.add_argument("--disable-gpu")
+    
+    # This line is crucial for Streamlit Cloud to find the browser
+    chrome_options.binary_location = "/usr/bin/chromium-browser"
 
     driver = None
     try:
-        # 2. Initialize the Driver
-        service = Service(ChromeDriverManager().install())
+        # On Streamlit Cloud, we don't always need ChromeDriverManager 
+        # because we installed chromium-chromedriver via packages.txt
+        service = Service("/usr/bin/chromedriver")
         driver = webdriver.Chrome(service=service, options=chrome_options)
         
-        # 3. Load the page
         driver.get(url)
         
         # Wait for JavaScript to render (important for Daraz!)
