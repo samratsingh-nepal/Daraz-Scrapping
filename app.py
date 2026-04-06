@@ -1,12 +1,3 @@
-import streamlit as st
-import pandas as pd
-import os
-import time
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from bs4 import BeautifulSoup
-
 def scrape_hamrobazaar(url):
     chrome_options = Options()
     chrome_options.add_argument("--headless")
@@ -14,7 +5,6 @@ def scrape_hamrobazaar(url):
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
     
-    # Path for Streamlit Cloud
     chrome_options.binary_location = "/usr/bin/chromium"
     service = Service("/usr/bin/chromedriver")
 
@@ -23,68 +13,59 @@ def scrape_hamrobazaar(url):
         driver = webdriver.Chrome(service=service, options=chrome_options)
         driver.get(url)
         
-        # Wait for React to render the cards
-        time.sleep(10) 
+        # Give the page plenty of time to load the React grid
+        time.sleep(12) 
         
         soup = BeautifulSoup(driver.page_source, 'html.parser')
-        
-        # In the new Hamrobazaar layout, each ad is usually wrapped in a specific 
-        # container. We target the sections that contain both a title and a price.
         product_data = []
 
-        # Find all card-like structures
-        # Strategy: Find the titles first, then navigate to their parent containers
-        titles = soup.find_all(['h2', 'h3', 'span'], style=lambda s: s and 'font-weight' in s.lower() or 'bold' in s.lower())
-        
-        for title_el in titles:
+        # Hamrobazaar usually wraps the title in an <h2> or a <span> with a specific font size
+        # We look for the titles first
+        all_titles = soup.find_all(['h2', 'h3'])
+
+        for title_el in all_titles:
             name = title_el.get_text(strip=True)
             
-            # Filter out short strings that aren't product names
-            if len(name) < 10:
+            # Skip noise like "Filters" or "Quality"
+            if len(name) < 5 or "results" in name.lower():
                 continue
-                
-            # Find the parent container that holds the whole "row" or "card"
-            # We move up the tree to find the box containing all info
-            parent = title_el.parent
-            for _ in range(3): # Look up up to 3 levels
-                if parent:
-                    parent_text = parent.get_text()
-                    if "Rs." in parent_text or "रू" in parent_text:
-                        break
-                    parent = parent.parent
 
-            if parent:
-                # 1. EXTRACT PRICE
-                # Look for currency markers
-                price_el = parent.find(text=lambda t: "Rs." in t or "रू" in t)
-                price = price_el.strip() if price_el else "N/A"
+            # Navigate to find the details and price
+            # In their current layout, the description and price are usually 
+            # in the same parent container as the title.
+            parent = title_el.find_parent('div')
+            if not parent:
+                continue
 
-                # 2. EXTRACT DETAIL TEXT
-                # In Hamrobazaar, the description is usually the p or span 
-                # immediately following the title element
-                details = "N/A"
-                # Search for any long text block within the same parent that isn't the title
-                all_texts = parent.find_all(['p', 'span', 'div'], recursive=True)
-                for t in all_texts:
-                    txt = t.get_text(strip=True)
-                    # The description is usually longer than the title but shorter than the whole card
-                    if len(txt) > 20 and txt != name and "Rs." not in txt and "रू" not in txt:
-                        details = txt
-                        break
+            # 1. Extract Detail Text 
+            # It's usually the next paragraph or div with a smaller font
+            detail_text = "N/A"
+            description_el = title_el.find_next_sibling(['p', 'div', 'span'])
+            if description_el:
+                detail_text = description_el.get_text(strip=True)
 
-                # Avoid duplicates and "Noise" like "For Sale - House"
-                if name not in [d['product_name'] for d in product_data] and "results" not in name.lower():
-                    product_data.append({
-                        'product_name': name,
-                        'product_details': details,
-                        'product_price': price
-                    })
+            # 2. Extract Price
+            # We look specifically for the currency symbol inside this product card
+            price = "N/A"
+            price_search = parent.find_all(text=lambda t: "Rs." in t or "रू" in t)
+            if price_search:
+                price = price_search[0].strip()
 
-        if not product_data:
-            st.warning("No products found. Please check if the URL is correct or try a longer wait time.")
+            # Only add if we found a valid price or description
+            if price != "N/A" or detail_text != "N/A":
+                product_data.append({
+                    'product_name': name,
+                    'product_details': detail_text,
+                    'product_price': price
+                })
+
+        # Remove duplicates based on name
+        df = pd.DataFrame(product_data).drop_duplicates(subset=['product_name'])
+
+        if df.empty:
+            st.warning("No products found. The selectors might need adjusting or the page didn't load.")
             return None
 
-        df = pd.DataFrame(product_data)
         csv_file = 'hamrobazaar_results.csv'
         df.to_csv(csv_file, index=False, encoding='utf-8-sig')
         return csv_file
@@ -95,21 +76,3 @@ def scrape_hamrobazaar(url):
     finally:
         if driver:
             driver.quit()
-
-# --- Streamlit UI ---
-st.title("Hamrobazaar Search Scraper")
-
-# Default to your House for Sale link
-default_url = "https://hamrobazaar.com/category/06B8B8E6-4CDE-4D79-AE65-38B8BAA9FF17/56C5F377-50C1-424A-B6C2-24A8B3235DC7"
-url_input = st.text_input("Enter Hamrobazaar URL:", value=default_url)
-
-if st.button("Start Extraction"):
-    with st.spinner('Reading product cards...'):
-        csv_path = scrape_hamrobazaar(url_input)
-        if csv_path:
-            df_display = pd.read_csv(csv_path)
-            st.success(f"Successfully scraped {len(df_display)} products!")
-            st.dataframe(df_display) # Show a preview in the app
-            
-            with open(csv_path, "rb") as f:
-                st.download_button("Download Full CSV", f, file_name=csv_path)
