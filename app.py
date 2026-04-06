@@ -12,84 +12,83 @@ def scrape_hamrobazaar(url):
     chrome_options.add_argument("--headless")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
+    
+    # --- STEALTH SETTINGS ---
+    # These lines hide the fact that this is an automated bot
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    chrome_options.add_experimental_option('useAutomationExtension', False)
     chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
     
-    # Cloud Config
     chrome_options.binary_location = "/usr/bin/chromium"
     service = Service("/usr/bin/chromedriver")
 
     driver = None
     try:
         driver = webdriver.Chrome(service=service, options=chrome_options)
+        
+        # This Javascript command further hides Selenium
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        
         driver.get(url)
         
-        # 1. SCROLL: Essential to trigger React to 'paint' the text
-        driver.execute_script("window.scrollTo(0, 800);")
-        time.sleep(3)
+        # Scroll once to trigger the React "Hydration" (filling in the text)
+        driver.execute_script("window.scrollTo(0, 500);")
+        time.sleep(5)
         driver.execute_script("window.scrollTo(0, 0);")
-        time.sleep(12) 
+        time.sleep(10) 
         
         soup = BeautifulSoup(driver.page_source, 'html.parser')
         product_data = []
 
-        # 2. FIND ALL DIVS: We look for containers that have 'Rs.' or 'रू'
-        # This is the most reliable footprint of a product card.
-        all_divs = soup.find_all('div')
+        # Find all card containers. Hamrobazaar usually uses <a> tags for the whole card
+        # or specific divs with product-related classes.
+        cards = soup.find_all(['a', 'div'], recursive=True)
 
-        for div in all_divs:
-            # We only want 'leaf' divs that are product cards (not the whole page)
-            # A product card usually has 'Rs.' and is between 100-1000 characters
-            text = div.get_text(" ", strip=True)
-            if ("Rs." in text or "रू" in text) and 50 < len(text) < 600:
+        for card in cards:
+            text_lines = [t.strip() for t in card.get_text("|", strip=True).split("|") if len(t.strip()) > 1]
+            
+            # A valid card usually contains "Rs." and has at least 3 pieces of info
+            # (Title, Description snippet, Price)
+            has_price = any("Rs." in line or "रू" in line for line in text_lines)
+            
+            if has_price and len(text_lines) >= 3:
+                # Based on the screenshot layout:
+                # line 0 is often the Category or Tag
+                # line 1 is usually the Title
+                # line 2-3 is the Description
+                # The line with "Rs." is the Price
                 
-                # Check if this div has already been processed (avoid nested duplicates)
-                if any(text[:30] in d['Product Name'] for d in product_data):
-                    continue
-
-                try:
-                    # Logic: The first line is usually the title
-                    lines = [l.strip() for l in text.split("  ") if len(l.strip()) > 2]
-                    
-                    if len(lines) >= 2:
-                        name = lines[0]
-                        # Price is the one with Rs.
-                        price = next((l for l in lines if "Rs." in l or "रू" in l), "N/A")
-                        # Description is usually the line that isn't the name or price
-                        desc = next((l for l in lines if l != name and l != price and len(l) > 15), "N/A")
-
-                        product_data.append({
-                            'Product Name': name,
-                            'Description': desc,
-                            'Price': price
-                        })
-                except:
-                    continue
+                name = text_lines[0]
+                price = next((l for l in text_lines if "Rs." in l or "रू" in l), "N/A")
+                
+                # Combine remaining lines for description
+                description = " ".join([l for l in text_lines if l != name and l != price])
+                
+                # Filter out very short results or duplicates
+                if len(name) > 10 and name not in [d['Product Name'] for d in product_data]:
+                    product_data.append({
+                        'Product Name': name,
+                        'Description': description[:250], # Keep it clean
+                        'Price': price
+                    })
 
         if not product_data:
-            # FALLBACK: If the above fails, search for common React classes
-            st.info("Attempting fallback search...")
-            cards = soup.select('div[class*="product"], div[class*="card"]')
-            for card in cards:
-                # Basic text extraction
-                info = card.get_text("|", strip=True).split("|")
-                if len(info) >= 2:
-                    product_data.append({'Product Name': info[0], 'Description': info[1] if len(info)>2 else "N/A", 'Price': info[-1]})
-
-        if not product_data:
+            # Final Fallback: Just grab every bold text and its nearest price
             return None
 
-        df = pd.DataFrame(product_data).drop_duplicates(subset=['Product Name'])
+        df = pd.DataFrame(product_data)
         csv_file = 'hamrobazaar_data.csv'
         df.to_csv(csv_file, index=False, encoding='utf-8-sig')
         return csv_file
 
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.error(f"Scraping Error: {e}")
         return None
     finally:
         if driver:
             driver.quit()
-# --- Streamlit Interface ---
+            # --- Streamlit Interface ---
 st.set_page_config(page_title="Hamrobazaar Scraper", layout="wide")
 
 st.title("🏘️ Hamrobazaar Product Scraper")
