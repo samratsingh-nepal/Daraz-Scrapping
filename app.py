@@ -14,7 +14,6 @@ def scrape_hamrobazaar(url):
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36")
     
-    # Cloud Config
     chrome_options.binary_location = "/usr/bin/chromium"
     service = Service("/usr/bin/chromedriver")
 
@@ -23,45 +22,50 @@ def scrape_hamrobazaar(url):
         driver = webdriver.Chrome(service=service, options=chrome_options)
         driver.get(url)
         
-        # Scroll down and wait to ensure React renders the data-index containers
-        driver.execute_script("window.scrollTo(0, 1200);")
-        time.sleep(5)
-        driver.execute_script("window.scrollTo(0, 0);")
-        time.sleep(8) 
-        
-        soup = BeautifulSoup(driver.page_source, 'html.parser')
         product_data = []
+        
+        # --- THE FIX: MULTI-STAGE SCROLLING ---
+        # We scroll multiple times to trigger the lazy-loading of all items
+        for scroll_step in range(5):  # Increase range for more data
+            driver.execute_script(f"window.scrollTo(0, {scroll_step * 1500});")
+            time.sleep(4)  # Wait for the 'Next' batch to load
+            
+            soup = BeautifulSoup(driver.page_source, 'html.parser')
+            
+            # Find all listings current in the DOM
+            listings = soup.find_all('div', attrs={'data-index': True})
+            
+            for item in listings:
+                try:
+                    # Search for the Title
+                    title_tag = item.select_one('a.heading-h6')
+                    
+                    # If there's no title_tag, this is likely an ADVERTISEMENT or empty slot.
+                    # We just skip it and move to the next 'data-index'
+                    if not title_el := title_tag:
+                        continue
+                        
+                    title = title_el.get_text(strip=True)
 
-        # 1. Target the main containers using the data-index attribute
-        # Your HTML shows each card starts with <div data-index="...">
-        listings = soup.find_all('div', attrs={'data-index': True})
+                    # Skip if we already captured this product in a previous scroll step
+                    if any(d['Title'] == title for d in product_data):
+                        continue
 
-        for item in listings:
-            try:
-                # 2. Extract Title: Find the <a> tag with class 'heading-h6'
-                title_tag = item.select_one('a.heading-h6')
-                if not title_tag:
-                    continue
-                title = title_tag.get_text(strip=True)
+                    # Extract Description
+                    desc_tag = item.select_one('p.cursor-pointer')
+                    description = desc_tag.get_text(separator="\n", strip=True) if desc_tag else "N/A"
 
-                # 3. Extract Description: Find the <p> tag with cursor-pointer
-                # Note: The 'hidden' class might be toggled by JS; we grab it anyway
-                desc_tag = item.select_one('p.cursor-pointer')
-                description = desc_tag.get_text(separator="\n", strip=True) if desc_tag else "N/A"
+                    # Extract Price
+                    price_tag = item.select_one('span.font-semibold')
+                    price = price_tag.get_text(strip=True) if price_tag else "N/A"
 
-                # 4. Extract Price: Look for the span with font-semibold near the rupee icon
-                price_tag = item.select_one('span.font-semibold')
-                price = price_tag.get_text(strip=True) if price_tag else "N/A"
-
-                # Only add if it's a unique listing
-                if title not in [d['Title'] for d in product_data]:
                     product_data.append({
                         'Title': title,
                         'Price': price,
                         'Description': description
                     })
-            except Exception:
-                continue
+                except Exception:
+                    continue  # Keep moving even if one item fails
 
         if not product_data:
             return None
@@ -78,6 +82,7 @@ def scrape_hamrobazaar(url):
         if driver:
             driver.quit()
 
+# --- Streamlit UI stays the same ---
 # --- Streamlit UI ---
 st.title("🏘️ Hamrobazaar Listing Extractor")
 
