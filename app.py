@@ -24,67 +24,67 @@ def scrape_hamrobazaar(url):
         driver = webdriver.Chrome(service=service, options=chrome_options)
         driver.get(url)
         
-        # Give React time to render the content
-        time.sleep(12) 
+        # 1. SCROLL DOWN: Hamrobazaar often lazy-loads data. 
+        # This scrolls the page to trigger the content to appear.
+        driver.execute_script("window.scrollTo(0, 1000);")
+        time.sleep(5)
+        driver.execute_script("window.scrollTo(0, 0);")
+        time.sleep(10) # Total 15s wait
         
         soup = BeautifulSoup(driver.page_source, 'html.parser')
         product_data = []
 
-        # Find potential title elements
-        all_titles = soup.find_all(['h2', 'h3'])
+        # 2. TARGET THE GRID: Most Hamrobazaar items are inside <a> tags or <div> cards
+        # We search for elements that look like a product card.
+        potential_cards = soup.find_all(['div', 'a'], recursive=True)
 
-        for title_el in all_titles:
-            name = title_el.get_text(strip=True)
+        for card in potential_cards:
+            card_text = card.get_text()
             
-            # Filter out UI elements and noise
-            if len(name) < 5 or "results" in name.lower() or "filter" in name.lower():
-                continue
+            # Check if this div contains a price (Rs. or रू)
+            if ("Rs." in card_text or "रू" in card_text) and len(card_text) < 500:
+                try:
+                    # The Title is usually the first heading or bold text
+                    title_el = card.find(['h2', 'h3', 'h4', 'strong'])
+                    if not title_el:
+                        continue
+                        
+                    name = title_el.get_text(strip=True)
+                    if len(name) < 5: continue
 
-            # Find the common parent container for this specific product
-            parent = title_el.find_parent('div')
-            if not parent:
-                continue
+                    # The Price is the part containing 'Rs.'
+                    price = "N/A"
+                    price_tags = card.find_all(string=lambda t: "Rs." in t or "रू" in t)
+                    if price_tags:
+                        price = price_tags[0].strip()
 
-            # 1. Extract Detail Text (Description snippet)
-            detail_text = "N/A"
-            # Look for the immediate next sibling or a paragraph within the same block
-            description_el = title_el.find_next_sibling(['p', 'div', 'span'])
-            if description_el:
-                detail_text = description_el.get_text(strip=True)
+                    # The Details/Description is usually the text between the title and price
+                    # We clean the text by removing the name and price from the string
+                    full_text = card.get_text(" | ", strip=True)
+                    details = full_text.replace(name, "").replace(price, "").strip(" | ")
+                    
+                    # Clean up the detail text if it's too long or contains garbage
+                    if len(details) > 200:
+                        details = details[:197] + "..."
 
-            # 2. Extract Price
-            price = "N/A"
-            # Search for currency markers within the parent block
-            price_search = parent.find_all(string=lambda t: "Rs." in t or "रू" in t)
-            if price_search:
-                price = price_search[0].strip()
-
-            # Logic to handle if the price is nested slightly differently
-            if price == "N/A":
-                all_text_in_parent = parent.get_text()
-                if "Rs." in all_text_in_parent:
-                    # Simple extraction if it exists anywhere in the card
-                    parts = all_text_in_parent.split("Rs.")
-                    if len(parts) > 1:
-                        price = "Rs. " + parts[1].split()[0]
-
-            # Only append if we actually found usable data
-            if name and (price != "N/A" or detail_text != "N/A"):
-                product_data.append({
-                    'Product Name': name,
-                    'Description': detail_text,
-                    'Price': price
-                })
+                    if name not in [d['Product Name'] for d in product_data]:
+                        product_data.append({
+                            'Product Name': name,
+                            'Description': details if details else "N/A",
+                            'Price': price
+                        })
+                except:
+                    continue
 
         if not product_data:
+            # DEBUG: Let's see what the robot actually saw
+            st.error(f"Debug Info: Found {len(potential_cards)} potential containers, but none matched.")
             return None
 
-        # Clean up data
-        df = pd.DataFrame(product_data).drop_duplicates(subset=['Product Name'])
+        df = pd.DataFrame(product_data)
         csv_file = 'hamrobazaar_data.csv'
         df.to_csv(csv_file, index=False, encoding='utf-8-sig')
         return csv_file
-
     except Exception as e:
         st.error(f"Scraping Error: {e}")
         return None
