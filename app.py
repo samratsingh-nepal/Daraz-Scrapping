@@ -13,25 +13,21 @@ def scrape_website(url):
     chrome_options.add_argument("--headless")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
     
-    # This line is crucial for Streamlit Cloud to find the browser
-    chrome_options.binary_location = "/usr/bin/chromium-browser"
+    # These two lines are the secret sauce for Streamlit Cloud
+    chrome_options.binary_location = "/usr/bin/chromium"
+    service = Service("/usr/bin/chromedriver")
 
     driver = None
     try:
-        # On Streamlit Cloud, we don't always need ChromeDriverManager 
-        # because we installed chromium-chromedriver via packages.txt
-        service = Service("/usr/bin/chromedriver")
+        # We pass the service and options directly
         driver = webdriver.Chrome(service=service, options=chrome_options)
         
         driver.get(url)
+        time.sleep(8) # Daraz is slow on cloud servers; give it more time
         
-        # Wait for JavaScript to render (important for Daraz!)
-        time.sleep(5) 
-        
-        # 4. Pass the rendered HTML to BeautifulSoup
         soup = BeautifulSoup(driver.page_source, 'html.parser')
+        
         
         # Updated selectors based on Daraz's current structure
         # Note: These can change, so we look for common patterns
