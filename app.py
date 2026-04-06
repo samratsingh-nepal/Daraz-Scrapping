@@ -23,59 +23,50 @@ def scrape_hamrobazaar(url):
         driver = webdriver.Chrome(service=service, options=chrome_options)
         driver.get(url)
         
-        # Scroll to load more than 3 products
-        driver.execute_script("window.scrollTo(0, 1000);")
-        time.sleep(5)
-        driver.execute_script("window.scrollTo(0, 0);")
-        time.sleep(8) 
+        # --- THE VIRTUAL LIST FIX ---
+        # We must scroll slowly to trigger the dynamic loading of items.
+        # This loop scrolls down 5 times to uncover hidden products.
+        for i in range(5):
+            driver.execute_script(f"window.scrollTo(0, {i * 800});")
+            time.sleep(3) 
         
         soup = BeautifulSoup(driver.page_source, 'html.parser')
         product_data = []
 
-        # 1. Target the titles using the class you provided
-        # We use a partial match 'heading-h6' because the rest can be dynamic
-        titles = soup.select('a[class*="heading-h6"]')
+        # Find all product containers based on the 'group' class in your snippet
+        cards = soup.find_all('div', class_='group')
 
-        for title_el in titles:
-            title_text = title_el.get_text(strip=True)
-            
-            # 2. Find the Card Container
-            # We go up to the main div that holds the image, title, and price
-            card = title_el.find_parent('div')
-            # Move up a few more levels if necessary to get the full card info
-            for _ in range(3):
-                if card and ("Rs." in card.get_text() or "रू" in card.get_text()):
-                    break
-                card = card.parent if card else None
+        for card in cards:
+            try:
+                # 1. Title: Target the heading-h6 anchor
+                title_el = card.select_one('a.heading-h6')
+                title = title_el.get_text(strip=True) if title_el else None
 
-            if card:
-                # 3. Extract Price
-                price_el = card.find(string=lambda t: "Rs." in t or "रू" in t)
-                price = price_el.strip() if price_el else "N/A"
+                # 2. Description: Target the specific paragraph class
+                desc_el = card.select_one('p.text-on-surface-dim-1')
+                description = desc_el.get_text(strip=True) if desc_el else "No description"
 
-                # 4. Extract Description
-                # Usually a span or p tag inside the same card that isn't the title
-                description = "N/A"
-                all_texts = card.find_all(['span', 'p', 'div'], recursive=True)
-                for t in all_texts:
-                    txt = t.get_text(strip=True)
-                    # The description is usually the 'middle' length text
-                    if 20 < len(txt) < 200 and txt != title_text and "Rs." not in txt:
-                        description = txt
-                        break
+                # 3. Price: Look for the span that contains the currency icon
+                # Based on your HTML, it's a span with specific text classes near the SVG
+                price = "N/A"
+                price_container = card.find('span', class_='font-semibold')
+                if price_container:
+                    price = price_container.get_text(strip=True)
 
-                if title_text not in [d['Title'] for d in product_data]:
+                if title and title not in [d['Title'] for d in product_data]:
                     product_data.append({
-                        'Title': title_text,
+                        'Title': title,
                         'Price': price,
                         'Description': description
                     })
+            except Exception:
+                continue
 
         if not product_data:
             return None
 
         df = pd.DataFrame(product_data)
-        csv_file = 'hamrobazaar_houses.csv'
+        csv_file = 'hamrobazaar_data.csv'
         df.to_csv(csv_file, index=False, encoding='utf-8-sig')
         return csv_file
 
@@ -87,21 +78,19 @@ def scrape_hamrobazaar(url):
             driver.quit()
 
 # --- Streamlit UI ---
-st.set_page_config(page_title="Hamrobazaar House Scraper", layout="wide")
-st.title("🏘️ Hamrobazaar House Listings Scraper")
+st.set_page_config(page_title="Hamrobazaar Scraper", layout="wide")
+st.title("🏘️ Hamrobazaar Listing Scraper")
 
-default_url = "https://hamrobazaar.com/category/06B8B8E6-4CDE-4D79-AE65-38B8BAA9FF17/56C5F377-50C1-424A-B6C2-24A8B3235DC7"
-url_input = st.text_input("Category URL:", value=default_url)
+url_input = st.text_input("Category URL:", "https://hamrobazaar.com/category/06B8B8E6-4CDE-4D79-AE65-38B8BAA9FF17/56C5F377-50C1-424A-B6C2-24A8B3235DC7")
 
-if st.button("Start Extraction"):
-    with st.spinner("Processing listings... this takes a moment."):
-        path = scrape_hamrobazaar(url_input)
-        if path:
-            df = pd.read_csv(path)
-            st.success(f"Found {len(df)} listings!")
-            st.dataframe(df, use_container_width=True)
-            with open(path, "rb") as f:
-                st.download_button("Download CSV", f, file_name="houses.csv")
-            os.remove(path)
+if st.button("Start Scraping"):
+    with st.spinner("Scrolling through virtual list and extracting data..."):
+        file_path = scrape_hamrobazaar(url_input)
+        if file_path:
+            df = pd.read_csv(file_path)
+            st.success(f"Extracted {len(df)} listings!")
+            st.dataframe(df)
+            with open(file_path, "rb") as f:
+                st.download_button("Download CSV", f, file_name="hamrobazaar_houses.csv")
         else:
-            st.error("No data found. Try refreshing or checking the URL.")
+            st.error("No data extracted. Try running it again.")
