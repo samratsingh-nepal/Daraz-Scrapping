@@ -14,12 +14,13 @@ def scrape_hamrobazaar(url):
     chrome_options.add_argument("--disable-dev-shm-usage")
     
     # --- STEALTH SETTINGS ---
-    # These lines hide the fact that this is an automated bot
+    # These prevent the site from detecting Selenium
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option('useAutomationExtension', False)
-    chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-    
+    chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36")
+
+    # Path configuration for Streamlit Cloud
     chrome_options.binary_location = "/usr/bin/chromium"
     service = Service("/usr/bin/chromedriver")
 
@@ -27,103 +28,85 @@ def scrape_hamrobazaar(url):
     try:
         driver = webdriver.Chrome(service=service, options=chrome_options)
         
-        # This Javascript command further hides Selenium
+        # Additional stealth: Remove the 'webdriver' flag
         driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         
         driver.get(url)
         
-        # Scroll once to trigger the React "Hydration" (filling in the text)
-        driver.execute_script("window.scrollTo(0, 500);")
+        # 1. Wait for the page to load initial assets
         time.sleep(5)
+        
+        # 2. Scroll to trigger "Hydration" (the process where React fills in the data)
+        driver.execute_script("window.scrollTo(0, 600);")
+        time.sleep(3)
         driver.execute_script("window.scrollTo(0, 0);")
-        time.sleep(10) 
+        time.sleep(7) # Total wait ~15s
         
         soup = BeautifulSoup(driver.page_source, 'html.parser')
         product_data = []
 
-        # Find all card containers. Hamrobazaar usually uses <a> tags for the whole card
-        # or specific divs with product-related classes.
-        cards = soup.find_all(['a', 'div'], recursive=True)
+        # 3. ROBUST EXTRACTION: 
+        # Hamrobazaar uses specific 'data-testid' or nested <a> tags for cards.
+        # We target all <a> tags that look like they contain a product.
+        cards = soup.find_all('a', href=True)
 
         for card in cards:
-            text_lines = [t.strip() for t in card.get_text("|", strip=True).split("|") if len(t.strip()) > 1]
+            text_content = card.get_text("|", strip=True).split("|")
             
-            # A valid card usually contains "Rs." and has at least 3 pieces of info
-            # (Title, Description snippet, Price)
-            has_price = any("Rs." in line or "रू" in line for line in text_lines)
-            
-            if has_price and len(text_lines) >= 3:
-                # Based on the screenshot layout:
-                # line 0 is often the Category or Tag
-                # line 1 is usually the Title
-                # line 2-3 is the Description
-                # The line with "Rs." is the Price
-                
-                name = text_lines[0]
-                price = next((l for l in text_lines if "Rs." in l or "रू" in l), "N/A")
-                
-                # Combine remaining lines for description
-                description = " ".join([l for l in text_lines if l != name and l != price])
-                
-                # Filter out very short results or duplicates
-                if len(name) > 10 and name not in [d['Product Name'] for d in product_data]:
-                    product_data.append({
-                        'Product Name': name,
-                        'Description': description[:250], # Keep it clean
-                        'Price': price
-                    })
+            # A valid product card usually has 3-5 lines of text
+            # e.g., ['HOUSE FOR SALE', 'Beautiful House in Lalitpur', 'Description snippet...', 'Rs. 2,50,00,000', '2 days ago']
+            if len(text_content) >= 3 and any("Rs." in line or "रू" in line for line in text_content):
+                try:
+                    # Logic based on current Hamrobazaar structure:
+                    # Usually: [0]Category, [1]Title, [2]Description, [Next]Price
+                    name = text_content[1]
+                    details = text_content[2]
+                    
+                    # Find the price line
+                    price = next((l for l in text_content if "Rs." in l or "रू" in l), "N/A")
+                    
+                    # Basic cleaning
+                    if len(name) > 5 and name not in [d['Product Name'] for d in product_data]:
+                        product_data.append({
+                            'Product Name': name,
+                            'Description': details,
+                            'Price': price
+                        })
+                except Exception:
+                    continue
 
         if not product_data:
-            # Final Fallback: Just grab every bold text and its nearest price
             return None
 
         df = pd.DataFrame(product_data)
-        csv_file = 'hamrobazaar_data.csv'
+        csv_file = 'hamrobazaar_results.csv'
         df.to_csv(csv_file, index=False, encoding='utf-8-sig')
         return csv_file
 
     except Exception as e:
-        st.error(f"Scraping Error: {e}")
+        st.error(f"Error during scraping: {e}")
         return None
     finally:
         if driver:
             driver.quit()
-            # --- Streamlit Interface ---
-st.set_page_config(page_title="Hamrobazaar Scraper", layout="wide")
 
-st.title("🏘️ Hamrobazaar Product Scraper")
-st.markdown("""
-Extract product names, descriptions, and prices from Hamrobazaar categories. 
-Paste the URL of the category page you want to scrape below.
-""")
+# --- Streamlit UI ---
+st.set_page_config(page_title="Hamrobazaar Scraper", page_icon="🏠")
+st.title("🏠 Hamrobazaar Real Estate Scraper")
 
-# Default URL based on your screenshot
-default_url = "https://hamrobazaar.com/category/06B8B8E6-4CDE-4D79-AE65-38B8BAA9FF17/56C5F377-50C1-424A-B6C2-24A8B3235DC7"
-url_input = st.text_input("Hamrobazaar Category URL:", value=default_url)
+url_input = st.text_input("Category URL:", "https://hamrobazaar.com/category/06B8B8E6-4CDE-4D79-AE65-38B8BAA9FF17/56C5F377-50C1-424A-B6C2-24A8B3235DC7")
 
 if st.button("Start Scraping"):
-    if url_input:
-        with st.spinner('Connecting to Hamrobazaar and rendering page...'):
-            result_file = scrape_hamrobazaar(url_input)
+    with st.spinner("Bypassing security and loading listings..."):
+        file_path = scrape_hamrobazaar(url_input)
+        
+        if file_path:
+            df = pd.read_csv(file_path)
+            st.success(f"Extracted {len(df)} listings successfully!")
+            st.dataframe(df, use_container_width=True)
             
-            if result_file:
-                df_final = pd.read_csv(result_file)
-                st.success(f"Found {len(df_final)} unique products!")
-                
-                # Display preview
-                st.dataframe(df_final, use_container_width=True)
-                
-                # Download button
-                with open(result_file, "rb") as f:
-                    st.download_button(
-                        label="Download Data as CSV",
-                        data=f,
-                        file_name=result_file,
-                        mime="text/csv"
-                    )
-                # Cleanup
-                os.remove(result_file)
-            else:
-                st.warning("No products were found. Try increasing the sleep timer or checking the URL.")
-    else:
-        st.error("Please enter a valid URL.")
+            with open(file_path, "rb") as f:
+                st.download_button("Download CSV", f, file_name="hamrobazaar_houses.csv")
+            os.remove(file_path)
+        else:
+            st.error("No products found. Hamrobazaar might be blocking the request or the page is taking too long to load.")
